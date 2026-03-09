@@ -19,18 +19,39 @@ jobs:
   create-repo:
     runs-on: ubuntu-latest
     steps:
+      - name: Log Port Context
+        run: |
+          echo "Port Context: ${{ github.event.inputs.port_context }}"
+          echo "Run ID: ${{ fromJson(github.event.inputs.port_context).runId }}"
+      
       - name: Create Repository
+        id: create-repo
         run: |
           gh repo create ${{ github.event.inputs.repo_name }} \
             --${{ github.event.inputs.public_repo == 'true' && 'public' || 'private' }}
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
       
-      - name: Report to Port
+      - name: Report Success to Port
+        if: success()
         uses: port-labs/port-github-action@v1
         with:
           clientId: ${{ secrets.PORT_CLIENT_ID }}
           clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          baseUrl: https://api.getport.io
           operation: PATCH_RUN
           runId: ${{ fromJson(github.event.inputs.port_context).runId }}
           status: "SUCCESS"
+          logMessage: "✅ Successfully created repository ${{ github.event.inputs.repo_name }}"
+      
+      - name: Report Failure to Port
+        if: failure()
+        uses: port-labs/port-github-action@v1
+        with:
+          clientId: ${{ secrets.PORT_CLIENT_ID }}
+          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          baseUrl: https://api.getport.io
+          operation: PATCH_RUN
+          runId: ${{ fromJson(github.event.inputs.port_context).runId }}
+          status: "FAILURE"
+          logMessage: "❌ Failed to create repository ${{ github.event.inputs.repo_name }}"
