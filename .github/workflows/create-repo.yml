@@ -3,19 +3,22 @@ on:
   workflow_dispatch:
     inputs:
       repo_name:
-        required: false
+        description: 'Repository name'
+        required: true
         type: string
       repo_description:
         required: false
         type: string
       visibility:  # ← Changed from public_repo
-        required: false
-        type: string  # ← Changed from boolean
+        description: 'Public repository'
+        required: true
+        type: boolean
       team:
         required: false
         type: string
       port_context:
-        required: false
+        description: 'Port context'
+        required: true
         type: string
 
 jobs:
@@ -32,49 +35,34 @@ jobs:
       - name: Create GitHub Repository
         id: create_repo
         run: |
-          VISIBILITY="${{ inputs.visibility }}"
-          PRIVATE="true"
-          if [ "$VISIBILITY" == "public" ]; then
-            PRIVATE="false"
-          fi
-          
-          RESPONSE=$(curl -s -w "%{http_code}" -X POST \
-            -H "Authorization: token ${{ secrets.GH_PAT }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/orgs/gitMichaelHuang/repos \
-            -d "{
-              \"name\": \"${{ inputs.repo_name }}\",
-              \"description\": \"${{ inputs.repo_description }}\",
-              \"private\": $PRIVATE,
-              \"auto_init\": true
-            }")
-          
-          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-          BODY=$(echo "$RESPONSE" | sed '$d')
-          
-          if [ "$HTTP_CODE" -ne 201 ]; then
-            echo "❌ Failed to create repository (HTTP $HTTP_CODE)"
-            echo "Response: $BODY"
-            exit 1
-          fi
-          
-          REPO_URL=$(echo "$BODY" | jq -r '.html_url')
-          echo "repo_url=$REPO_URL" >> $GITHUB_OUTPUT
-          echo "✅ Repository created: $REPO_URL"
+          gh repo create ${{ github.event.inputs.repo_name }} \
+            --${{ github.event.inputs.visibility == 'true' && 'public' || 'private' }}
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
 
-      - name: Update Port Run
-        if: always()
+      - name: Report Success to Port
+        if: success()
         uses: port-labs/port-github-action@v1
         with:
           clientId: ${{ secrets.PORT_CLIENT_ID }}
           clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          baseUrl: https://api.getport.io
           operation: PATCH_RUN
-          runId: ${{ fromJson(inputs.port_context).runId }}
-          status: ${{ job.status == 'success' && 'SUCCESS' || 'FAILURE' }}
-          logMessage: |
-            ${{ job.status == 'success' && '✅ Repository created successfully!' || '❌ Repository creation failed' }}
-            🔗 Repository: ${{ steps.create_repo.outputs.repo_url }}
-            📋 Jira Ticket: ${{ fromJson(inputs.port_context).jiraUrl }}
+          runId: ${{ fromJson(github.event.inputs.port_context).runId }}
+          status: "SUCCESS"
+          logMessage: "✅ Successfully created repository ${{ github.event.inputs.repo_name }}"
+
+      - name: Report Failure to Port
+        if: failure()
+        uses: port-labs/port-github-action@v1
+        with:
+          clientId: ${{ secrets.PORT_CLIENT_ID }}
+          clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
+          baseUrl: https://api.getport.io
+          operation: PATCH_RUN
+          runId: ${{ fromJson(github.event.inputs.port_context).runId }}
+          status: "FAILURE"
+          logMessage: "❌ Failed to create repository ${{ github.event.inputs.repo_name }}"
 
       - name: Comment on Jira Ticket
         if: success()
