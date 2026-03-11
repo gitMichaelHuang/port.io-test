@@ -1,4 +1,4 @@
-name: Create GitHub Repository
+name: Create GitHub Repository with Jira
 on:
   workflow_dispatch:
     inputs:
