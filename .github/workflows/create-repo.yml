@@ -1,21 +1,21 @@
-name: Create GitHub Repository with Jira
+name: Create GitHub Repository (Automation)
 on:
   workflow_dispatch:
     inputs:
       repo_name:
-        required: true
+        required: false
         type: string
       repo_description:
         required: false
         type: string
-      visibility:
-        required: true
-        type: string
+      visibility:  # ← Changed from public_repo
+        required: false
+        type: string  # ← Changed from boolean
       team:
         required: false
         type: string
       port_context:
-        required: true
+        required: false
         type: string
 
 jobs:
@@ -25,6 +25,7 @@ jobs:
       - name: Log Inputs
         run: |
           echo "Creating repository: ${{ inputs.repo_name }}"
+          echo "Description: ${{ inputs.repo_description }}"
           echo "Visibility: ${{ inputs.visibility }}"
           echo "Team: ${{ inputs.team }}"
 
@@ -44,7 +45,8 @@ jobs:
             -d "{
               \"name\": \"${{ inputs.repo_name }}\",
               \"description\": \"${{ inputs.repo_description }}\",
-              \"private\": $PRIVATE
+              \"private\": $PRIVATE,
+              \"auto_init\": true
             }")
           
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
@@ -61,19 +63,21 @@ jobs:
           echo "✅ Repository created: $REPO_URL"
 
       - name: Update Port Run
-        if: fromJson(inputs.port_context).runId != null && fromJson(inputs.port_context).runId != ''
+        if: always()
         uses: port-labs/port-github-action@v1
         with:
           clientId: ${{ secrets.PORT_CLIENT_ID }}
           clientSecret: ${{ secrets.PORT_CLIENT_SECRET }}
           operation: PATCH_RUN
           runId: ${{ fromJson(inputs.port_context).runId }}
+          status: ${{ job.status == 'success' && 'SUCCESS' || 'FAILURE' }}
           logMessage: |
-            ✅ GitHub repository created successfully!
+            ${{ job.status == 'success' && '✅ Repository created successfully!' || '❌ Repository creation failed' }}
             🔗 Repository: ${{ steps.create_repo.outputs.repo_url }}
             📋 Jira Ticket: ${{ fromJson(inputs.port_context).jiraUrl }}
 
       - name: Comment on Jira Ticket
+        if: success()
         env:
           JIRA_TICKET: ${{ fromJson(inputs.port_context).jiraTicket }}
           REPO_URL: ${{ steps.create_repo.outputs.repo_url }}
@@ -102,21 +106,7 @@ jobs:
                     \"content\": [
                       {
                         \"type\": \"text\",
-                        \"text\": \"Repository URL: \"
-                      },
-                      {
-                        \"type\": \"text\",
-                        \"text\": \"${REPO_URL}\",
-                        \"marks\": [{\"type\": \"link\", \"attrs\": {\"href\": \"${REPO_URL}\"}}]
-                      }
-                    ]
-                  },
-                  {
-                    \"type\": \"paragraph\",
-                    \"content\": [
-                      {
-                        \"type\": \"text\",
-                        \"text\": \"Created via Port automation.\"
+                        \"text\": \"Repository URL: ${REPO_URL}\"
                       }
                     ]
                   }
